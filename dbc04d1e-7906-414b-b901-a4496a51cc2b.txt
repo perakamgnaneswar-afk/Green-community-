@@ -1,0 +1,234 @@
+/* ==========================================================
+   Green Community – script.js
+   Vanilla JavaScript only. Nothing is sent to any server.
+   ========================================================== */
+'use strict';
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- Footer year ---------- */
+$('#year').textContent = new Date().getFullYear();
+
+/* ---------- Toast notifications ---------- */
+function toast(message, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type === 'error' ? 'error' : '');
+  el.textContent = message;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+
+/* ---------- Mobile navigation ---------- */
+const navToggle = $('.nav-toggle');
+const navLinks = $('#nav-links');
+function setMenu(open) {
+  navLinks.classList.toggle('open', open);
+  navToggle.setAttribute('aria-expanded', open);
+  navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  navToggle.textContent = open ? '✕' : '☰';
+}
+navToggle.addEventListener('click', () => setMenu(!navLinks.classList.contains('open')));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
+
+/* ---------- Smooth scrolling (+ close menu) ---------- */
+$$('a[href^="#"]').forEach(link => {
+  link.addEventListener('click', e => {
+    const id = link.getAttribute('href');
+    if (link.dataset.placeholder) {            // placeholder social links
+      e.preventDefault();
+      toast(link.dataset.placeholder + ' link is a placeholder in this demo.');
+      return;
+    }
+    const target = id.length > 1 ? $(id) : null;
+    if (!target) return;
+    e.preventDefault();
+    target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    setMenu(false);
+  });
+});
+
+/* Highlight the current section in the nav */
+const sectionObserver = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    if (en.isIntersecting) {
+      $$('.nav-links a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + en.target.id));
+    }
+  });
+}, { rootMargin: '-45% 0px -50% 0px' });
+$$('main section[id]').forEach(s => sectionObserver.observe(s));
+
+/* ---------- Scroll-triggered reveal animations ---------- */
+const revealObserver = new IntersectionObserver((entries, obs) => {
+  entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('visible'); obs.unobserve(en.target); } });
+}, { threshold: 0.12 });
+$$('.reveal').forEach(el => revealObserver.observe(el));
+
+/* ---------- Back-to-top button ---------- */
+const toTop = $('#to-top');
+window.addEventListener('scroll', () => { toTop.hidden = window.scrollY < 500; }, { passive: true });
+toTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }));
+
+/* ---------- Image fallback: show gradient if an image fails ---------- */
+$$('img').forEach(img => {
+  const markFailed = () => (img.closest('.thumb, .g-item') || img.parentElement).classList.add('noimg');
+  img.addEventListener('error', markFailed);
+  if (img.complete && img.naturalWidth === 0 && img.src) markFailed();
+});
+
+/* ---------- Interactive activity cards ("Learn More") ---------- */
+$$('.learn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const panel = document.getElementById(btn.getAttribute('aria-controls'));
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', !open);
+    btn.textContent = open ? 'Learn More' : 'Show Less';
+    panel.hidden = open;
+  });
+});
+
+/* ---------- Animated impact counters ---------- */
+function runCounter(el) {
+  const target = +el.dataset.target;
+  if (reduceMotion) { el.textContent = target.toLocaleString(); return; }
+  const start = performance.now(), duration = 1800;
+  (function tick(now) {
+    const p = Math.min((now - start) / duration, 1);
+    el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))).toLocaleString();
+    if (p < 1) requestAnimationFrame(tick);
+  })(start);
+}
+const counterObserver = new IntersectionObserver((entries, obs) => {
+  entries.forEach(en => { if (en.isIntersecting) { $$('.num', en.target).forEach(runCounter); obs.unobserve(en.target); } });
+}, { threshold: 0.4 });
+counterObserver.observe($('#impact'));
+
+/* ---------- Form validation helpers ---------- */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE = /^[0-9+\-\s()]{7,15}$/;
+
+function fieldError(input) {
+  const v = input.value.trim();
+  const label = ($(`label[for="${input.id}"]`) || {}).textContent || 'This field';
+  if (input.required && !v) return input.tagName === 'SELECT' ? `Please choose an option for ${label}.` : `${label} is required.`;
+  if (input.type === 'email' && v && !EMAIL.test(v)) return 'Enter a valid email, like name@example.com.';
+  if (input.type === 'tel' && v && !PHONE.test(v)) return 'Enter a phone number with 7–15 digits.';
+  if (input.minLength > 0 && v && v.length < input.minLength) return `${label} needs at least ${input.minLength} characters.`;
+  return '';
+}
+function showError(input, msg) {
+  const out = input.parentElement.querySelector('.error');
+  out.textContent = msg;
+  out.id = out.id || input.id + '-err';
+  input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  if (msg) input.setAttribute('aria-describedby', out.id); else input.removeAttribute('aria-describedby');
+}
+/* Validates every field; focuses the first invalid one. Returns true if valid. */
+function validateForm(form) {
+  let first = null;
+  $$('input, select, textarea', form).forEach(input => {
+    const msg = fieldError(input);
+    showError(input, msg);
+    if (msg && !first) first = input;
+  });
+  if (first) first.focus();
+  return !first;
+}
+/* Clear an error as soon as the user fixes the field */
+function liveValidate(form) {
+  form.addEventListener('input', e => { if (e.target.matches('input, select, textarea')) showError(e.target, fieldError(e.target)); });
+  form.addEventListener('change', e => { if (e.target.matches('select')) showError(e.target, fieldError(e.target)); });
+}
+function formMessage(form, text) {
+  const p = $('.form-msg', form);
+  p.textContent = text; p.hidden = false;
+}
+
+/* ---------- Volunteer form ---------- */
+const volForm = $('#volunteer-form');
+liveValidate(volForm);
+volForm.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!validateForm(volForm)) { toast('Please fix the highlighted fields.', 'error'); return; }
+  const name = $('#v-name').value.trim();
+  const msg = `Thank you, ${name}! Your form is complete. This demo does not store or send it anywhere; a real site would need a backend to receive volunteers.`;
+  formMessage(volForm, msg); toast('Volunteer form completed.');
+  volForm.reset();
+});
+
+/* ---------- Feedback form (saved in localStorage on this device) ---------- */
+const fbForm = $('#feedback-form');
+liveValidate(fbForm);
+fbForm.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!validateForm(fbForm)) { toast('Please fix the highlighted fields.', 'error'); return; }
+  const entry = { name: $('#f-name').value.trim(), email: $('#f-email').value.trim(), rating: $('#f-rating').value, message: $('#f-msg').value.trim(), date: new Date().toISOString() };
+  let saved = false;
+  try {
+    const all = JSON.parse(localStorage.getItem('gc-feedback') || '[]');
+    all.push(entry);
+    localStorage.setItem('gc-feedback', JSON.stringify(all));
+    saved = true;
+  } catch (err) { /* storage may be blocked; handled below */ }
+  formMessage(fbForm, saved
+    ? 'Thank you for your feedback! It is saved on this device only (browser local storage) and has not been sent to anyone.'
+    : 'Thank you! Your browser blocked local storage, so the feedback was not saved, and nothing was sent anywhere.');
+  toast('Feedback received.');
+  fbForm.reset();
+});
+
+/* ---------- Contact form (no server, so nothing is sent) ---------- */
+const conForm = $('#contact-form');
+liveValidate(conForm);
+conForm.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!validateForm(conForm)) { toast('Please fix the highlighted fields.', 'error'); return; }
+  formMessage(conForm, 'Your message looks good, but this demo has no server, so it was not sent. A real site would need a backend or email service.');
+  toast('Message checked (not sent).');
+  conForm.reset();
+});
+
+/* ---------- Event registration (dialog) ---------- */
+const regDialog = $('#reg-dialog');
+const regForm = $('#reg-form');
+let activeEvent = null;
+liveValidate(regForm);
+
+$$('.register').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeEvent = btn.closest('.event');
+    $('#reg-title').textContent = 'Register: ' + activeEvent.dataset.event;
+    regForm.reset(); $$('input', regForm).forEach(i => showError(i, ''));
+    regDialog.showModal();
+  });
+});
+$('#reg-cancel').addEventListener('click', () => regDialog.close());
+regForm.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!validateForm(regForm)) return;
+  const slotEl = $('.slot-count', activeEvent);
+  const left = Math.max(0, +slotEl.textContent - 1);
+  slotEl.textContent = left;                       // updates only on this page view
+  const name = $('#r-name').value.trim();
+  if (left === 0) {
+    const b = $('.register', activeEvent); b.disabled = true; b.textContent = 'Fully Booked';
+  }
+  regDialog.close();
+  toast(`You're registered, ${name}! (Demo only: not saved or sent anywhere.)`);
+});
+regDialog.addEventListener('click', e => { if (e.target === regDialog) regDialog.close(); }); // click outside
+
+/* ---------- Gallery lightbox ---------- */
+const lightbox = $('#lightbox');
+$$('.g-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const img = $('img', item);
+    $('#lb-img').src = img.src.replace('w=800', 'w=1400');
+    $('#lb-img').alt = img.alt;
+    $('#lb-cap').textContent = item.dataset.caption;
+    lightbox.showModal();
+  });
+});
+$('#lb-close').addEventListener('click', () => lightbox.close());
+lightbox.addEventListener('click', e => { if (e.target === lightbox) lightbox.close(); });
